@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+*.log
+backend/data/*.local.json
+contracts/target/
+contracts/.stellar/
+
