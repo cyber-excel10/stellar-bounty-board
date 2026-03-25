@@ -35,6 +35,8 @@ Contract (`contracts`)
 - Soroban Rust contract scaffold
 - Escrow-style bounty lifecycle methods
 
+For detailed architecture diagrams and data flow documentation, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## API Overview
 
 Base URL:
