@@ -21,6 +21,17 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return body;
 }
 
+function parseFilenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const match = header.match(/filename\*?=(?:UTF-8''|")?([^\";]+)"?/i);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -80,6 +91,23 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
   throw formatRetryError(retryLabel, retryAttempts, message);
 }
 
+async function requestBlob(path: string, init: RequestInit = {}): Promise<{ blob: Blob; filename: string | null }> {
+  const response = await fetch(`${API_BASE}${path}`, init);
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const body = (await response.json().catch(() => ({}))) as ApiBody<{ error?: string }>;
+      throw new Error(body.error ?? "Unexpected API error");
+    }
+    const text = await response.text().catch(() => "");
+    throw new Error(text || `Request failed with HTTP ${response.status}`);
+  }
+
+  const filename = parseFilenameFromContentDisposition(response.headers.get("content-disposition"));
+  const blob = await response.blob();
+  return { blob, filename };
+}
+
 export async function listBounties(): Promise<Bounty[]> {
   const body = await requestJson<{ data: Bounty[] }>("/bounties", {
     retry: true,
@@ -120,20 +148,28 @@ export async function submitBounty(
   return body.data;
 }
 
-export async function releaseBounty(id: string, maintainer: string): Promise<Bounty> {
+export async function releaseBounty(
+  id: string,
+  maintainer: string,
+  transactionHash?: string,
+): Promise<Bounty> {
   const body = await requestJson<{ data: Bounty }>(`/bounties/${id}/release`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ maintainer }),
+    body: JSON.stringify({ maintainer, transactionHash }),
   });
   return body.data;
 }
 
-export async function refundBounty(id: string, maintainer: string): Promise<Bounty> {
+export async function refundBounty(
+  id: string,
+  maintainer: string,
+  transactionHash?: string,
+): Promise<Bounty> {
   const body = await requestJson<{ data: Bounty }>(`/bounties/${id}/refund`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ maintainer }),
+    body: JSON.stringify({ maintainer, transactionHash }),
   });
   return body.data;
 }
@@ -144,5 +180,13 @@ export async function listOpenIssues(): Promise<OpenIssue[]> {
     retryLabel: "Loading open issues",
   });
   return body.data;
+}
+
+export async function exportReleasedPayoutsCsv(): Promise<{ blob: Blob; filename: string }> {
+  const result = await requestBlob("/bounties/released/export.csv");
+  return {
+    blob: result.blob,
+    filename: result.filename ?? "released-payouts.csv",
+  };
 }
 

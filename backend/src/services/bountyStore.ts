@@ -1,8 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import {
-
-} from "./notificationService";
+import { sendNotification, type NotificationRecipient } from "./notificationService";
 
 export type BountyStatus =
   | "open"
@@ -29,7 +27,9 @@ export interface BountyRecord {
   reservedAt?: number;
   submittedAt?: number;
   releasedAt?: number;
+  releasedTxHash?: string;
   refundedAt?: number;
+  refundedTxHash?: string;
   submissionUrl?: string;
   notes?: string;
 }
@@ -219,7 +219,7 @@ export function reserveBounty(id: string, contributor: string): BountyRecord {
     reservedAt: nowInSeconds(),
   };
 
-
+  return persistUpdated(records, updated);
 }
 
 export function submitBounty(
@@ -246,10 +246,10 @@ export function submitBounty(
     notes,
   };
 
-
+  return persistUpdated(records, updated);
 }
 
-export function releaseBounty(id: string, maintainer: string): BountyRecord {
+export function releaseBounty(id: string, maintainer: string, transactionHash?: string): BountyRecord {
   const records = listBounties();
   const bounty = findBounty(records, id);
 
@@ -264,12 +264,13 @@ export function releaseBounty(id: string, maintainer: string): BountyRecord {
     ...bounty,
     status: "released",
     releasedAt: nowInSeconds(),
+    releasedTxHash: transactionHash?.trim() ? transactionHash.trim() : bounty.releasedTxHash,
   };
 
-
+  return persistUpdated(records, updated);
 }
 
-export function refundBounty(id: string, maintainer: string): BountyRecord {
+export function refundBounty(id: string, maintainer: string, transactionHash?: string): BountyRecord {
   const records = listBounties();
   const bounty = findBounty(records, id);
 
@@ -287,8 +288,9 @@ export function refundBounty(id: string, maintainer: string): BountyRecord {
     ...bounty,
     status: "refunded",
     refundedAt: nowInSeconds(),
+    refundedTxHash: transactionHash?.trim() ? transactionHash.trim() : bounty.refundedTxHash,
   };
 
-
+  return persistUpdated(records, updated);
 }
 
