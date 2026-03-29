@@ -6,6 +6,21 @@ export type BountyStatus =
   | "refunded"
   | "expired";
 
+export type EventType =
+  | "created"
+  | "reserved"
+  | "submitted"
+  | "released"
+  | "refunded"
+  | "expired";
+
+export interface BountyEvent {
+  type: EventType;
+  timestamp: number;
+  actor?: string;
+  details?: Record<string, unknown>;
+}
+
 export interface Bounty {
   id: string;
   repo: string;
@@ -23,9 +38,14 @@ export interface Bounty {
   reservedAt?: number;
   submittedAt?: number;
   releasedAt?: number;
+  releasedTxHash?: string;
   refundedAt?: number;
+  refundedTxHash?: string;
   submissionUrl?: string;
   notes?: string;
+  version: number;
+  events: BountyEvent[];
+  reservationTimeoutSeconds?: number;
 }
 
 export interface CreateBountyPayload {
@@ -48,3 +68,32 @@ export interface OpenIssue {
   impact: "starter" | "core" | "advanced";
 }
 
+
+
+export interface MaintainerMetrics {
+  maintainer: string;
+  totalBounties: number;
+  openCount: number;
+  reservedCount: number;
+  submittedCount: number;
+  releasedCount: number;
+  refundedCount: number;
+  expiredCount: number;
+  totalFunded: number;
+  totalReleased: number;
+  averageRewardAmount: number;
+}
+
+export interface GlobalMetrics {
+  totalBounties: number;
+  openCount: number;
+  reservedCount: number;
+  submittedCount: number;
+  releasedCount: number;
+  refundedCount: number;
+  expiredCount: number;
+  totalFunded: number;
+  totalReleased: number;
+  uniqueMaintainers: number;
+  uniqueContributors: number;
+}
