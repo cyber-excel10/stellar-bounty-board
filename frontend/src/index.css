@@ -589,6 +589,75 @@ select {
   padding: 18px;
 }
 
+.bounty-card[role="link"] {
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.bounty-card[role="link"]:hover {
+  transform: translateY(-1px);
+  border-color: rgba(54, 63, 59, 0.2);
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.bounty-card[role="link"]:focus-visible {
+  outline: 3px solid rgba(30, 143, 111, 0.35);
+  outline-offset: 3px;
+}
+
+.bounty-detail {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.bounty-detail__content {
+  display: grid;
+  gap: 16px;
+}
+
+.bounty-detail__hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.bounty-detail__hero .bounty-summary {
+  margin-top: 10px;
+}
+
+.repo-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  border: 1px solid rgba(54, 63, 59, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.meta-grid--detail {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.meta-grid--detail strong {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chip-row--spaced {
+  margin-top: 6px;
+}
+
+.action-row--detail {
+  justify-content: flex-start;
+}
+
+.action-row--detail button {
+  flex: 0 1 auto;
+}
+
 .github-issue-card {
   border-radius: 22px;
   border: 1px solid rgba(54, 63, 59, 0.12);
@@ -876,6 +945,16 @@ select {
   }
 }
 
+@media (max-width: 860px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .meta-grid--detail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 640px) {
   .page-shell {
     padding: 20px 14px 44px;
@@ -896,7 +975,27 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .bounty-detail__hero {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
 
+  .meta-grid--detail {
+    grid-template-columns: 1fr;
+  }
+
+  .action-row--detail {
+    width: 100%;
+  }
+
+  .action-row--detail button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .repo-avatar {
+    width: 52px;
+    height: 52px;
   }
 
   .hero h1 {

@@ -21,7 +21,14 @@ import {
   submitBounty,
 } from "./api";
 
+import GitHubIssuePreviewCard from "./GitHubIssuePreviewCard";
+import type { Bounty, BountyStatus, CreateBountyPayload, OpenIssue } from "./types";
+import BountyDetailPage from "./BountyDetailPage";
+
 import SkeletonBountyCard from "./SkeletonBountyCard";
+
+const STELLAR_PUBLIC_KEY_HINT = "Expected Stellar public key (starts with G and is 56 characters).";
+const STELLAR_PUBLIC_KEY_REGEX = /^G[A-Z2-7]{55}$/;
 
 const initialForm: CreateBountyPayload = {
   repo: "ritik4ever/stellar-stream",
@@ -58,6 +65,28 @@ function validateStellarPublicKey(input: string): string | null {
   return null;
 }
 
+function readInitialFilters() {
+  const params = new URLSearchParams(window.location.search);
+  const rawSearch = params.get("search") ?? "";
+  const rawStatus = params.get("status") ?? "all";
+  const statusFilter: "all" | BountyStatus =
+    rawStatus === "open" ||
+    rawStatus === "reserved" ||
+    rawStatus === "submitted" ||
+    rawStatus === "released" ||
+    rawStatus === "refunded" ||
+    rawStatus === "expired"
+      ? rawStatus
+      : "all";
+
+  return {
+    searchQuery: rawSearch,
+    statusFilter,
+    minReward: params.get("minReward") ?? "",
+    maxReward: params.get("maxReward") ?? "",
+  };
+}
+
 const contributorStatuses: Array<BountyStatus | "all"> = [
   "all",
   "reserved",
@@ -66,6 +95,56 @@ const contributorStatuses: Array<BountyStatus | "all"> = [
   "refunded",
   "expired",
 ];
+
+type BountyAction = "reserve" | "submit" | "release" | "refund";
+
+const statusCopy: Record<BountyStatus, { label: string; description: string }> = {
+  open: {
+    label: "Open",
+    description: "Maintainer-funded and ready for a contributor to reserve.",
+  },
+  reserved: {
+    label: "Reserved",
+    description: "A contributor has claimed the work and is preparing a submission.",
+  },
+  submitted: {
+    label: "Submitted",
+    description: "The contributor has shared a PR link. Maintainer can release or refund.",
+  },
+  released: {
+    label: "Released",
+    description: "Escrow has been paid out to the contributor.",
+  },
+  refunded: {
+    label: "Refunded",
+    description: "Escrow has been returned to the maintainer.",
+  },
+  expired: {
+    label: "Expired",
+    description: "Deadline passed before completion. Maintainer can refund.",
+  },
+};
+
+const actionCopy: Record<BountyStatus, Array<{ action: BountyAction; label: string; title: string }>> = {
+  open: [{ action: "reserve", label: "Reserve", title: "Claim this bounty as a contributor." }],
+  reserved: [{ action: "submit", label: "Submit", title: "Attach a pull request or demo link." }],
+  submitted: [
+    { action: "release", label: "Release", title: "Release payout after review." },
+    { action: "refund", label: "Refund", title: "Refund escrow instead of releasing." },
+  ],
+  released: [],
+  refunded: [],
+  expired: [{ action: "refund", label: "Refund", title: "Refund an expired bounty." }],
+};
+
+function repoOwner(repo: string): string {
+  return repo.split("/")[0] ?? repo;
+}
+
+function formatTimestamp(value?: number): string {
+  if (!value) return "-";
+  return new Date(value * 1000).toLocaleString();
+}
 
 function App() {
   const initialFilters = useMemo(() => readInitialFilters(), []);
@@ -76,6 +155,15 @@ function App() {
   const [submitting, setSubmitting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pathname, setPathname] = useState(() => window.location.pathname);
+
+  const [searchQuery, setSearchQuery] = useState(initialFilters.searchQuery);
+  const [statusFilter, setStatusFilter] = useState<"all" | BountyStatus>(initialFilters.statusFilter);
+  const [minReward, setMinReward] = useState(initialFilters.minReward);
+  const [maxReward, setMaxReward] = useState(initialFilters.maxReward);
+
+  const [profileContributor, setProfileContributor] = useState("");
+  const [profileStatus, setProfileStatus] = useState<(BountyStatus | "all")>("all");
 
 
   async function refresh(): Promise<void> {
@@ -113,6 +201,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (pathname.startsWith("/bounties/")) return;
     const params = new URLSearchParams();
 
     if (searchQuery.trim() !== "") {
@@ -134,10 +223,14 @@ function App() {
     const nextSearch = params.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [maxReward, minReward, searchQuery, statusFilter]);
+  }, [maxReward, minReward, pathname, searchQuery, statusFilter]);
 
   useEffect(() => {
     function handlePopState() {
+      const nextPathname = window.location.pathname;
+      setPathname(nextPathname);
+
+      if (nextPathname.startsWith("/bounties/")) return;
       const filters = readInitialFilters();
       setSearchQuery(filters.searchQuery);
       setStatusFilter(filters.statusFilter);
@@ -148,6 +241,12 @@ function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  function navigate(nextPath: string) {
+    if (nextPath === window.location.pathname) return;
+    window.history.pushState(null, "", nextPath);
+    setPathname(nextPath);
+  }
 
   const metrics = useMemo(() => {
     const activePool = bounties.filter((bounty) =>
@@ -160,6 +259,130 @@ function App() {
       shippedRewards: bounties.filter((bounty) => bounty.status === "released").length,
     };
   }, [bounties]);
+
+  const rewardBounds = useMemo(() => {
+    if (bounties.length === 0) return { lowest: 0, highest: 0 };
+    const amounts = bounties.map((bounty) => bounty.amount);
+    return {
+      lowest: Math.min(...amounts),
+      highest: Math.max(...amounts),
+    };
+  }, [bounties]);
+
+  const statusOptions = useMemo(() => {
+    return [
+      { value: "all" as const, label: "All" },
+      { value: "open" as const, label: statusCopy.open.label },
+      { value: "reserved" as const, label: statusCopy.reserved.label },
+      { value: "submitted" as const, label: statusCopy.submitted.label },
+      { value: "released" as const, label: statusCopy.released.label },
+      { value: "refunded" as const, label: statusCopy.refunded.label },
+      { value: "expired" as const, label: statusCopy.expired.label },
+    ];
+  }, []);
+
+  const statusGlossary = useMemo(() => {
+    return (Object.keys(statusCopy) as BountyStatus[]).map((status) => ({
+      status,
+      label: statusCopy[status].label,
+      description: statusCopy[status].description,
+    }));
+  }, []);
+
+  const filteredBounties = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const min = minReward.trim() ? Number(minReward) : null;
+    const max = maxReward.trim() ? Number(maxReward) : null;
+
+    return bounties.filter((bounty) => {
+      if (statusFilter !== "all" && bounty.status !== statusFilter) return false;
+      if (min !== null && Number.isFinite(min) && bounty.amount < min) return false;
+      if (max !== null && Number.isFinite(max) && bounty.amount > max) return false;
+      if (!query) return true;
+
+      const haystack = [
+        bounty.repo,
+        String(bounty.issueNumber),
+        bounty.title,
+        bounty.summary,
+        bounty.status,
+        ...bounty.labels,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [bounties, maxReward, minReward, searchQuery, statusFilter]);
+
+  const activeRewardLabel = useMemo(() => {
+    const min = minReward.trim() ? minReward.trim() : "0";
+    const max = maxReward.trim() ? maxReward.trim() : "No limit";
+    return `${min} - ${max}`;
+  }, [maxReward, minReward]);
+
+  function clearFilters() {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setMinReward("");
+    setMaxReward("");
+  }
+
+  async function handleExportReleasedPayouts(): Promise<void> {
+    try {
+      setExporting(true);
+      setError(null);
+      const result = await exportReleasedPayoutsCsv();
+      const url = URL.createObjectURL(result.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = result.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to export payouts.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const contributorMetrics = useMemo(() => {
+    const contributor = profileContributor.trim();
+    if (!contributor) {
+      return {
+        contributor: null as string | null,
+        filtered: [] as Bounty[],
+        countsByStatus: new Map<BountyStatus, number>(),
+        releasedTotalsByAsset: new Map<string, number>(),
+      };
+    }
+
+    const owned = bounties.filter((bounty) => bounty.contributor === contributor);
+    const filtered = owned.filter((bounty) => (profileStatus === "all" ? true : bounty.status === profileStatus));
+
+    const countsByStatus = new Map<BountyStatus, number>();
+    for (const bounty of owned) {
+      countsByStatus.set(bounty.status, (countsByStatus.get(bounty.status) ?? 0) + 1);
+    }
+
+    const releasedTotalsByAsset = new Map<string, number>();
+    for (const bounty of owned) {
+      if (bounty.status !== "released") continue;
+      releasedTotalsByAsset.set(
+        bounty.tokenSymbol,
+        (releasedTotalsByAsset.get(bounty.tokenSymbol) ?? 0) + bounty.amount,
+      );
+    }
+
+    return {
+      contributor,
+      filtered,
+      countsByStatus,
+      releasedTotalsByAsset,
+    };
+  }, [bounties, profileContributor, profileStatus]);
 
 
 
@@ -188,6 +411,70 @@ function App() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function renderActionButton(
+    bounty: Bounty,
+    action: { action: BountyAction; label: string; title: string },
+  ): ReactNode {
+    const onClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      if (action.action === "reserve") {
+        void handleReserve(bounty);
+        return;
+      }
+      if (action.action === "submit") {
+        void handleSubmit(bounty);
+        return;
+      }
+      if (action.action === "release") {
+        void handleRelease(bounty);
+        return;
+      }
+      void handleRefund(bounty);
+    };
+
+    return (
+      <button
+        key={action.action}
+        type="button"
+        className={action.action === "refund" ? "ghost-button" : "secondary-button"}
+        title={action.title}
+        onClick={onClick}
+      >
+        {action.label}
+      </button>
+    );
+  }
+
+  const detailId = useMemo(() => {
+    const match = pathname.match(/^\/bounties\/([^/]+)$/);
+    return match ? decodeURIComponent(match[1] ?? "") : null;
+  }, [pathname]);
+
+  const detailBounty = useMemo(() => {
+    if (!detailId) return null;
+    return bounties.find((bounty) => bounty.id === detailId) ?? null;
+  }, [bounties, detailId]);
+
+  if (detailId) {
+    const bounty = detailBounty;
+    const owner = bounty ? repoOwner(bounty.repo) : "";
+    const avatarUrl = bounty ? `https://github.com/${owner}.png?size=72` : "";
+
+    return (
+      <BountyDetailPage
+        bounty={bounty}
+        loading={loading}
+        onBack={() => navigate("/")}
+        owner={owner}
+        avatarUrl={avatarUrl}
+        statusCopy={statusCopy}
+        actionCopy={actionCopy}
+        renderActionButton={renderActionButton}
+        formatTimestamp={formatTimestamp}
+      />
+    );
   }
 
   async function handleReserve(bounty: Bounty) {
@@ -261,10 +548,6 @@ function App() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to refund bounty.");
-    }
-  }
-
-
     }
   }
 
@@ -583,7 +866,19 @@ function App() {
           ) : filteredBounties.length > 0 ? (
             <div className="board-list">
               {filteredBounties.map((bounty) => (
-                <article className="bounty-card" key={bounty.id}>
+                <article
+                  className="bounty-card"
+                  key={bounty.id}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => navigate(`/bounties/${encodeURIComponent(bounty.id)}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      navigate(`/bounties/${encodeURIComponent(bounty.id)}`);
+                    }
+                  }}
+                >
                   <div className="bounty-card__top">
                     <div>
                       <span
