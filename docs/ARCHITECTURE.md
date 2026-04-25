@@ -168,6 +168,108 @@ Soroban contract implementing on-chain escrow logic for trustless bounty payouts
   ─────────────────────────────────────────────────────────────────────────────
 ```
 
+## Interaction Sequence Diagrams
+
+The following Mermaid diagrams show the detailed sequence of interactions for each bounty lifecycle action.
+
+### 1. Create Bounty
+
+```mermaid
+sequenceDiagram
+    participant Maintainer
+    participant Frontend
+    participant Backend
+    participant bounties.json
+
+    Maintainer->>Frontend: Fills bounty form<br/>(title, amount, token)
+    Frontend->>Backend: POST /api/bounties
+    activate Backend
+    Backend->>Backend: Validate with Zod schema
+    Backend->>bounties.json: Write new bounty record
+    Backend-->>Frontend: 201 { data: BountyRecord }
+    deactivate Backend
+    Frontend-->>Maintainer: Show bounty created<br/>Escrow locked ✓
+```
+
+### 2. Reserve Bounty
+
+```mermaid
+sequenceDiagram
+    participant Contributor
+    participant Frontend
+    participant Backend
+    participant bounties.json
+
+    Contributor->>Frontend: Clicks "Reserve This Bounty"
+    Frontend->>Backend: POST /api/bounties/:id/reserve<br/>{ contributor: "G..." }
+    activate Backend
+    Backend->>bounties.json: Read bounty (check status = OPEN)
+    Backend->>bounties.json: Update: status = RESERVED<br/>add contributor
+    Backend-->>Frontend: 200 { data: updated bounty }
+    deactivate Backend
+    Frontend-->>Contributor: Show "Reserved"<br/>Claim locked in ✓
+```
+
+### 3. Submit Work
+
+```mermaid
+sequenceDiagram
+    participant Contributor
+    participant Frontend
+    participant Backend
+    participant bounties.json
+
+    Contributor->>Frontend: Enters PR link<br/>clicks "Submit Work"
+    Frontend->>Backend: POST /api/bounties/:id/submit<br/>{ submissionUrl: "https://..." }
+    activate Backend
+    Backend->>bounties.json: Read bounty (check status = RESERVED)
+    Backend->>bounties.json: Update: status = SUBMITTED<br/>store submissionUrl
+    Backend-->>Frontend: 200 { data: updated bounty }
+    deactivate Backend
+    Frontend-->>Contributor: Show "Submitted"<br/>Waiting for review ✓
+```
+
+### 4. Release Payout
+
+```mermaid
+sequenceDiagram
+    participant Maintainer
+    participant Frontend
+    participant Backend
+    participant bounties.json
+    participant Soroban Contract<br/>(Future)
+
+    Maintainer->>Frontend: Reviews PR, clicks "Release"
+    Frontend->>Backend: POST /api/bounties/:id/release<br/>{ maintainer: "G..." }
+    activate Backend
+    Backend->>bounties.json: Read bounty (check status = SUBMITTED)
+    Backend->>bounties.json: Update: status = RELEASED<br/>record release timestamp
+    Backend-->>Frontend: 200 { data: released bounty }
+    deactivate Backend
+    Frontend-->>Maintainer: Show "Released"<br/>Payout processed ✓
+    
+    Note over Maintainer,Soroban Contract<br/>(Future): When wallet auth is live:<br/>Backend will call Soroban contract<br/>to transfer escrowed tokens to contributor
+```
+
+### 5. Refund (Cancelled Bounty)
+
+```mermaid
+sequenceDiagram
+    participant Maintainer
+    participant Frontend
+    participant Backend
+    participant bounties.json
+
+    Maintainer->>Frontend: Decides to cancel,<br/>clicks "Refund"
+    Frontend->>Backend: POST /api/bounties/:id/refund<br/>{ maintainer: "G..." }
+    activate Backend
+    Backend->>bounties.json: Read bounty (check status = OPEN or RESERVED)
+    Backend->>bounties.json: Update: status = REFUNDED<br/>record refund timestamp
+    Backend-->>Frontend: 200 { data: refunded bounty }
+    deactivate Backend
+    Frontend-->>Maintainer: Show "Refunded"<br/>Escrow returned ✓
+```
+
 ## Data Flow
 
 ```
@@ -232,6 +334,53 @@ Soroban contract implementing on-chain escrow logic for trustless bounty payouts
                         On release:             │
                         Token transfer ─────────┴───────▶ Contributor wallet
 ```
+
+## On-Chain vs Off-Chain Data Ownership
+
+**Current state:** The backend JSON store is the authoritative source of truth for all bounty data and state transitions.
+
+**Future state:** The Soroban smart contract will become the source of truth for escrow state and fund availability.
+
+### Data Field Mapping
+
+| Data Field | Current Owner | Future Owner | Notes |
+|------------|---------------|--------------|-------|
+| `id` | Backend JSON | Backend (read from contract) | Unique identifier, never changes |
+| `maintainer` | Backend JSON | Soroban Contract | Stored on-chain for escrow validation |
+| `contributor` | Backend JSON | Soroban Contract | Stored on-chain for payout routing |
+| `amount` | Backend JSON | Soroban Contract | Token amount in escrow, validated by contract |
+| `token` | Backend JSON | Soroban Contract | Token address in escrow |
+| `status` | Backend JSON | Soroban Contract | State machine transitions: OPEN → RESERVED → SUBMITTED → RELEASED |
+| `submissionUrl` (PR link) | Backend JSON | Backend JSON | Off-chain metadata; not stored on contract |
+| `createdAt` timestamp | Backend JSON | Backend JSON | For UI and ordering; not critical on-chain |
+| `releaseTime` | Backend JSON | Soroban Contract | Payout confirmation; emitted as contract event |
+| `refundTime` | Backend JSON | Soroban Contract | Cancellation confirmation; emitted as contract event |
+
+### State Transition Authority
+
+| Transition | Initiated By | Current Authority | Future Authority |
+|-----------|--------------|-------------------|------------------|
+| OPEN → RESERVED | Contributor | Backend validates claim | Contract validates claim + signature |
+| RESERVED → SUBMITTED | Contributor | Backend records PR URL | Backend records PR URL (contract confirms RESERVED status) |
+| SUBMITTED → RELEASED | Maintainer | Backend approves & updates | Contract escrow release (after backend approval) |
+| SUBMITTED → REFUNDED | Maintainer | Backend approves & updates | Contract escrow return (after backend approval) |
+| OPEN → EXPIRED | System (deadline) | Backend cron/timer | Contract timelock expiration check |
+| Any → RELEASED or REFUNDED | Wallet signature | Not applicable | Wallet-signed transaction for funds release |
+
+### Migration Path Notes
+
+1. **Phase 1 (Current):** Backend JSON is the source of truth. Contract exists but is not actively used for state transitions.
+
+2. **Phase 2 (Planned):** Backend listens for contract events (via Soroban event indexer). Bounty status can be updated by both backend API *and* on-chain events.
+
+3. **Phase 3 (Target):** Contract is the authoritative state machine. Backend acts as a read-only cache and metadata store for:
+   - `submissionUrl` (PR links)
+   - Timestamps and audit trail
+   - Off-chain notifications and UI state
+
+4. **During migration:** Both systems must agree. If contract state and backend state diverge, contract state takes precedence for financial decisions (e.g., escrow availability).
+
+---
 
 ## Deployment Architecture
 

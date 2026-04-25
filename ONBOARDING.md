@@ -340,6 +340,8 @@ Issue drafts ready to be opened live in [`docs/issues/`](./docs/issues/). If you
 5. **Keep diffs small** — reviewers appreciate focused, reviewable changes
 6. **Respond to review comments** — push follow-up commits to the same branch
 
+**Before you commit:** Check out [CONTRIBUTING.md](./CONTRIBUTING.md) for our commit message style guide (conventional commits), PR checklist, and development best practices.
+
 ---
 
 ## 12. Architecture & Deployment Links
