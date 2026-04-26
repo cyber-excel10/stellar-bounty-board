@@ -2,6 +2,7 @@ import { ArrowUpRight, Star, TrendingUp } from "lucide-react";
 import { BountyRecommendation } from "./recommendations";
 import { Bounty, BountyStatus } from "./types";
 import { statusCopy } from "./constants";
+import UsdAmount from "./UsdAmount";
 
 interface RecommendedBountiesProps {
   recommendations: BountyRecommendation[];
@@ -54,6 +55,9 @@ function BountyRecommendationCard({ recommendation }: { recommendation: BountyRe
         </div>
         <div className="amount-chip">
           {bounty.amount} {bounty.tokenSymbol}
+          {bounty.tokenSymbol === "XLM" && (
+            <UsdAmount amount={bounty.amount} />
+          )}
         </div>
       </div>
 

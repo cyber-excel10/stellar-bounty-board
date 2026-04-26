@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { ArrowUpRight } from "lucide-react";
+import UsdAmount from "./UsdAmount";
 
 import type { Bounty, BountyStatus } from "./types";
 
@@ -66,6 +67,9 @@ export default function BountyDetailPage({
               </div>
               <div className="amount-chip">
                 {bounty.amount} {bounty.tokenSymbol}
+                {bounty.tokenSymbol === "XLM" && (
+                  <UsdAmount amount={bounty.amount} />
+                )}
               </div>
             </div>
 

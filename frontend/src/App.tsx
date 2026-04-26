@@ -41,6 +41,7 @@ import { Bounty, CreateBountyPayload, OpenIssue, BountyStatus } from "./types";
 
 import GitHubIssuePreviewCard from "./GitHubIssuePreviewCard";
 import BountyDetailPage from "./BountyDetailPage";
+import UsdAmount from "./UsdAmount";
 
 import SkeletonBountyCard from "./SkeletonBountyCard";
 
@@ -988,6 +989,9 @@ function App() {
                     </div>
                     <div className="amount-chip">
                       {bounty.amount} {bounty.tokenSymbol}
+                      {bounty.tokenSymbol === "XLM" && (
+                        <UsdAmount amount={bounty.amount} />
+                      )}
                     </div>
                   </div>
 
