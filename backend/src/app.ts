@@ -137,6 +137,14 @@ app.get("/api/health", (_req: Request, res: Response) => {
   });
 });
 
+app.get("/worker/health", (_req: Request, res: Response) => {
+  res.json({
+    service: "stellar-bounty-board-worker",
+    status: "ok",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.get("/api/bounties", (req: Request, res: Response) => {
   const q = typeof req.query.q === "string" ? req.query.q : undefined;
   res.json({ data: listBounties({ q }) });
