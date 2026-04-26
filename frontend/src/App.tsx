@@ -139,36 +139,45 @@ function App() {
 
 
 
-  async function refresh(): Promise<void> {
-    const [bountyData, issueData] = await Promise.all([listBounties(), listOpenIssues()]);
+  async function refresh(signal?: AbortSignal): Promise<void> {
+    const [bountyData, issueData] = await Promise.all([
+      listBounties(signal),
+      listOpenIssues(signal),
+    ]);
     setBounties(bountyData);
     setIssues(issueData);
   }
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
+    const { signal } = controller;
 
     async function bootstrap() {
       try {
-        await refresh();
+        await refresh(signal);
       } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : "Failed to load project data.");
-        }
+        if (signal.aborted) return; // component unmounted — ignore
+        setError(err instanceof Error ? err.message : "Failed to load project data.");
       } finally {
-        if (active) {
+        if (!signal.aborted) {
           setLoading(false);
         }
       }
     }
 
     void bootstrap();
+
     const timer = window.setInterval(() => {
-      void refresh().catch(() => undefined);
+      const pollController = new AbortController();
+      void refresh(pollController.signal).catch((err) => {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          // Silent poll failure — do not surface to user
+        }
+      });
     }, 7000);
 
     return () => {
-      active = false;
+      controller.abort();
       window.clearInterval(timer);
     };
   }, []);
