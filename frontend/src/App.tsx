@@ -1104,7 +1104,7 @@ function App() {
                 <span className={`impact-chip impact-chip--${issue.impact}`}>{issue.impact}</span>
               </div>
               <h3>{issue.title}</h3>
-              <p>{issue.summary}</p>
+              <p> className="items-center text-center"{issue.summary}</p>
               <div className="chip-row">
                 {issue.labels.map((label) => (
                   <span className="chip" key={label}>
